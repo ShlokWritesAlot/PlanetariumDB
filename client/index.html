@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planetarium DB - Live 3D Solar System & RDBMS Console</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Three.js Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Header Navigation Bar -->
+    <header class="top-nav">
+        <div class="brand">
+            <span style="font-size: 1.25rem;">🪐</span>
+            <div>
+                <h1>Planetarium DB</h1>
+            </div>
+            <span class="brand-badge">PostgreSQL 3NF</span>
+        </div>
+
+        <div style="display: flex; gap: 10px; pointer-events: auto;">
+            <button id="btn-reset-view" class="btn">
+                <span>🎯</span> Reset Camera
+            </button>
+            <div class="status-badge" id="sse-status" title="Real-time Server-Sent Events connection">
+                <span class="status-indicator" id="status-indicator"></span>
+                <span id="status-text">Connecting SSE...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Collapsible Side Panel -->
+    <aside id="side-panel">
+        <!-- Toggle arrow button on left edge -->
+        <button id="panel-toggle-btn" title="Toggle Side Panel">◀</button>
+
+        <div class="panel-header">
+            <div class="panel-title">
+                <span>⚡</span> Database Operations Center
+            </div>
+        </div>
+
+        <!-- Panel Navigation Tabs -->
+        <nav class="panel-tabs">
+            <button class="panel-tab active" data-tab="tab-add">➕ Add Planet</button>
+            <button class="panel-tab" data-tab="tab-list">🪐 Planets & Delete</button>
+            <button class="panel-tab" data-tab="tab-stats">📊 Stats</button>
+            <button class="panel-tab" data-tab="tab-audit">📜 Live Audit</button>
+            <button class="panel-tab" data-tab="tab-sql">💻 SQL Console</button>
+        </nav>
+
+        <div class="panel-body">
+            <!-- TAB A: ADD PLANET FORM & MOONS SUB-FORM -->
+            <div id="tab-add" class="tab-pane active">
+                <!-- Inline Server Error Banner -->
+                <div id="form-inline-error" class="inline-error"></div>
+
+                <form id="form-add-planet">
+                    <div class="form-group">
+                        <label>Planet Name (UNIQUE constraint)</label>
+                        <input type="text" id="input-name" required placeholder="e.g., Kepler-186f">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Planet Type</label>
+                            <select id="input-type" required>
+                                <option value="1">Terrestrial</option>
+                                <option value="2">Gas Giant</option>
+                                <option value="3">Ice Giant</option>
+                                <option value="4">Dwarf Planet</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Hex Color</label>
+                            <input type="color" id="input-color" value="#38bdf8" style="height: 36px; padding: 2px;">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Radius (km > 0)</label>
+                            <input type="number" id="input-radius" step="0.1" required placeholder="6500">
+                        </div>
+                        <div class="form-group">
+                            <label>Orbit (AU > 0)</label>
+                            <input type="number" id="input-orbit" step="0.01" required placeholder="1.25">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Period (Days > 0)</label>
+                            <input type="number" id="input-period" step="0.1" required placeholder="420">
+                        </div>
+                        <div class="form-group">
+                            <label>Earth Masses (> 0)</label>
+                            <input type="number" id="input-mass" step="0.01" value="1.2">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="input-rings" style="width: auto;">
+                        <label for="input-rings" style="margin-bottom: 0; cursor: pointer;">Render Planetary Rings</label>
+                    </div>
+
+                    <!-- Moons Sub-form (Transactional test) -->
+                    <div class="subform-box">
+                        <div class="subform-title">
+                            <span>🌙 Moons Sub-form (Atomic Transaction)</span>
+                            <button type="button" id="btn-add-moon-row" class="btn btn-sm">➕ Add Moon</button>
+                        </div>
+                        <div id="moons-container" style="display: flex; flex-direction: column; gap: 8px;">
+                            <!-- Moon rows added dynamically -->
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 6px;">
+                        <span>🚀</span> Insert Planet into PostgreSQL
+                    </button>
+                </form>
+            </div>
+
+            <!-- TAB B: PLANETS LIST & INLINE DELETE -->
+            <div id="tab-list" class="tab-pane">
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px;">
+                    Click a planet to focus view. Deleting triggers <code style="color: var(--accent-cyan);">ON DELETE CASCADE</code> to all moons.
+                </div>
+                <div id="planets-catalog-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- TAB C: STATS ANALYTICS TABLES -->
+            <div id="tab-stats" class="tab-pane">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">5 Live SQL Analytical Queries</span>
+                    <button id="btn-refresh-stats" class="btn btn-sm">🔄 Refresh</button>
+                </div>
+                <div id="stats-tables-container">
+                    <!-- Populated dynamically with mini tables -->
+                </div>
+            </div>
+
+            <!-- TAB D: LIVE AUDIT LOG FEED -->
+            <div id="tab-audit" class="tab-pane">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">PostgreSQL Trigger Recordings</span>
+                    <button id="btn-clear-audit-view" class="btn btn-sm">Clear Feed</button>
+                </div>
+                <div id="live-audit-feed" style="display: flex; flex-direction: column; gap: 6px;">
+                    <!-- Populated via SSE and initial fetch -->
+                </div>
+            </div>
+
+            <!-- TAB E: SQL CONSOLE BOX -->
+            <div id="tab-sql" class="tab-pane">
+                <div style="font-size: 0.73rem; color: var(--text-secondary); margin-bottom: 8px;">
+                    Live read-only PostgreSQL sandbox for viva demonstration. Only <code style="color: var(--accent-green);">SELECT</code> queries permitted.
+                </div>
+
+                <div class="sql-presets">
+                    <button class="sql-preset-btn" data-sql="SELECT planet_name, radius_km, orbit_radius_au, total_moons FROM planet_render_view;">View All</button>
+                    <button class="sql-preset-btn" data-sql="SELECT name, radius_km FROM planets WHERE radius_km > 10000;">Large Planets</button>
+                    <button class="sql-preset-btn" data-sql="SELECT p.name AS planet, m.name AS moon FROM planets p JOIN moons m ON p.planet_id = m.planet_id;">All Moons</button>
+                    <button class="sql-preset-btn" data-sql="SELECT action_type, table_name, record_id, timestamp FROM audit_log ORDER BY timestamp DESC LIMIT 5;">Last 5 Audits</button>
+                </div>
+
+                <div class="sql-editor-container">
+                    <textarea id="sql-input" spellcheck="false">SELECT planet_name, radius_km, orbit_radius_au, total_moons FROM planet_render_view ORDER BY orbit_radius_au ASC;</textarea>
+                    <button id="btn-execute-sql" class="btn btn-primary" style="align-self: flex-end;">
+                        <span>▶</span> Execute SELECT
+                    </button>
+                </div>
+
+                <div id="sql-result-header" style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px; display: none;"></div>
+                <div id="sql-result-container">
+                    <span style="color: var(--text-muted);">Click "Execute SELECT" or select a preset query to run.</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Planet Inspector Info Card (Hover/Click) -->
+    <div id="planet-info-card">
+        <div class="card-header">
+            <div class="card-title-group">
+                <span id="card-dot" class="planet-color-dot"></span>
+                <span id="card-name" class="card-title">Planet Name</span>
+            </div>
+            <button id="card-close-btn" class="card-close">&times;</button>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Classification</div>
+                <div id="card-type" class="info-value">Terrestrial</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Star System</div>
+                <div id="card-star" class="info-value">Sun</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Orbit Distance</div>
+                <div id="card-orbit" class="info-value">1.0 AU</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Orbital Period</div>
+                <div id="card-period" class="info-value">365.25 d</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Radius</div>
+                <div id="card-radius" class="info-value">6,371 km</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Moons Count</div>
+                <div id="card-moons-count" class="info-value">1</div>
+            </div>
+        </div>
+
+        <div class="section-label">Atmosphere Breakdown</div>
+        <div id="card-atmosphere" class="pill-list">
+            <span class="pill">No data</span>
+        </div>
+
+        <div class="section-label">Satellites / Moons</div>
+        <div id="card-moons" class="pill-list">
+            <span class="pill">None</span>
+        </div>
+
+        <div class="section-label">Discovery Info</div>
+        <div id="card-discovery" style="font-size: 0.74rem; color: var(--text-secondary); line-height: 1.4;">
+            Known since antiquity
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <!-- CDN Libraries: Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- Main Application Logic -->
+    <script src="main.js"></script>
+</body>
+</html>
